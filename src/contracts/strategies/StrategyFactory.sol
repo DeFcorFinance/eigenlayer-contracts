@@ -8,9 +8,10 @@ import "./StrategyBase.sol";
 import "../permissions/Pausable.sol";
 
 /**
- * @title TODO: write this
+ * @title Factory contract for deploying StrategyBase contracts for arbitrary ERC20 tokens
+ *        and automatically adding them to the StrategyWhitelist in EigenLayer.
  * @author Layr Labs, Inc.
- * @notice TODO: write this
+ * @dev This may not be compatible with non-standard ERC20 tokens. Caution is warranted.
  */
 contract StrategyFactory is OwnableUpgradeable, Pausable {
 
@@ -19,20 +20,20 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
     /// @notice EigenLayer's StrategyManager contract
     IStrategyManager public immutable strategyManager;
 
-    StrategyBase public immutable strategyImplementation;
+    StrategyBase public strategyImplementation;
 
     ProxyAdmin public eigenLayerProxyAdmin;
 
     // @notice Mapping token => strategy contract for the token
     mapping(IERC20 => IStrategy) public tokenStrategies;
 
-    event ProxyAdminChanged(ProxyAdmin previousProxyAdmin, ProxyAdmin newProxyAdmin);
+    event StrategyImplementationModified(StrategyBase previousImplementation, StrategyBase newImplementation);
+    event ProxyAdminModified(ProxyAdmin previousProxyAdmin, ProxyAdmin newProxyAdmin);
     event StrategySetForToken(IERC20 token, IStrategy strategy);
 
     /// @notice Since this contract is designed to be initializable, the constructor simply sets the immutable variables.
-    constructor(IStrategyManager _strategyManager, StrategyBase _strategyImplementation) {
+    constructor(IStrategyManager _strategyManager) {
         strategyManager = _strategyManager;
-        strategyImplementation = _strategyImplementation;
         _disableInitializers();
     }
 
@@ -40,19 +41,24 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         address _initialOwner,
         IPauserRegistry _pauserRegistry,
         uint256 _initialPausedStatus,
+        StrategyBase _strategyImplementation,
         ProxyAdmin _eigenLayerProxyAdmin
     )
         public virtual initializer
     {
         _transferOwnership(_initialOwner);
         _initializePauser(_pauserRegistry, _initialPausedStatus);
-        // TODO: decide if a function for changing this is warranted
-        eigenLayerProxyAdmin = _eigenLayerProxyAdmin;
-        emit ProxyAdminChanged(ProxyAdmin(address(0)), _eigenLayerProxyAdmin);
+        _setStrategyImplementation(_strategyImplementation);
+        _setProxyAdmin(_eigenLayerProxyAdmin);
     }
 
-    // TODO: document with ample warnings
-    function deployNewStrategy(IERC20 token) external onlyWhenNotPaused(PAUSED_NEW_STRATEGIES) {
+    /**
+     * @notice Deploy a new StrategyBase contract for the ERC20 token.
+     * @dev A strategy contract must not yet exist for the token.
+     * $dev Immense caution is warranted for non-standard ERC20 tokens, particularly "reentrant" tokens
+     * like those that conform to ERC777.
+     */
+    function deployNewStrategy(IERC20 token) external onlyWhenNotPaused(PAUSED_NEW_STRATEGIES) returns (IStrategy newStrategy) {
         require(tokenStrategies[token] == IStrategy(address(0)),
             "StrategyFactory.deployNewStrategy: Strategy already exists for token");
         IStrategy strategy = IStrategy(
@@ -70,6 +76,7 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         strategiesToWhitelist[0] = strategy;
         thirdPartyTransfersForbiddenValues[0] = false;
         strategyManager.addStrategiesToDepositWhitelist(strategiesToWhitelist, thirdPartyTransfersForbiddenValues);
+        return strategy;
     }
 
     /** 
@@ -99,9 +106,29 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         }
     }
 
+    // @notice Owner-only function to modify the `eigenLayerProxyAdmin`
+    function setProxyAdmin(ProxyAdmin _eigenLayerProxyAdmin) external onlyOwner {
+        _setProxyAdmin(_eigenLayerProxyAdmin);
+    }
+
+    // @notice Owner-only function to modify the `strategyImplementation`
+    function setStrategyImplementation(StrategyBase _strategyImplementation) external onlyOwner {
+        _setStrategyImplementation(_strategyImplementation);
+    }
+
     function _setStrategyForToken(IERC20 token, IStrategy strategy) internal {
         tokenStrategies[token] = strategy;
         emit StrategySetForToken(token, strategy);
+    }
+
+    function _setProxyAdmin(ProxyAdmin _eigenLayerProxyAdmin) internal {
+        emit ProxyAdminModified(eigenLayerProxyAdmin, _eigenLayerProxyAdmin);
+        eigenLayerProxyAdmin = _eigenLayerProxyAdmin;
+    }
+
+    function _setStrategyImplementation(StrategyBase _strategyImplementation) internal {
+        emit StrategyImplementationModified(strategyImplementation, _strategyImplementation);
+        strategyImplementation = _strategyImplementation;
     }
 
     /**
@@ -109,5 +136,5 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
      * variables without shifting down storage in the inheritance chain.
      * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
      */
-    uint256[49] private __gap;
+    uint256[47] private __gap;
 }
