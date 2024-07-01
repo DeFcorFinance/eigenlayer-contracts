@@ -27,8 +27,15 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
     uint256 initialSupply = 1e36;
     address initialOwner = address(this);
     address beaconProxyOwner = address(this);
+    address notOwner = address(7777777);
 
     uint256 initialPausedStatus = 0;
+
+    // @notice Emitted when the `strategyBeacon` is changed
+    event StrategyBeaconModified(IBeacon previousBeacon, IBeacon newBeacon);
+
+    // @notice Emitted whenever a slot is set in the `tokenStrategy` mapping
+    event StrategySetForToken(IERC20 token, IStrategy strategy);
 
     function setUp() virtual override public {
         EigenLayerUnitTestSetup.setUp();
@@ -99,6 +106,8 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
     }
 
     function test_deployNewStrategy() public {
+        // cheats.expectEmit(true, true, true, true, address(strategyFactory));
+        // StrategySetForToken(underlyingToken, newStrategy);
         StrategyBase newStrategy = StrategyBase(address(strategyFactory.deployNewStrategy(underlyingToken)));
 
         require(strategyFactory.tokenStrategy(underlyingToken) == newStrategy, "tokenStrategy mapping not set correctly");
@@ -132,9 +141,67 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
         bool[] memory thirdPartyTransfersForbiddenValues = new bool[](1);
         strategiesToWhitelist[0] = strategy;
         thirdPartyTransfersForbiddenValues[0] = true;
+        cheats.expectEmit(true, true, true, true, address(strategyFactory));
+        emit StrategySetForToken(underlyingToken, strategy);
         strategyFactory.whitelistStrategies(strategiesToWhitelist, thirdPartyTransfersForbiddenValues);
 
         require(strategyFactory.tokenStrategy(underlyingToken) == strategy, "tokenStrategy mapping not set correctly");
         require(strategyManagerMock.thirdPartyTransfersForbidden(strategy), "3rd party transfers forbidden not set correctly");
+    }
+
+    function test_whitelistStrategies_revert_notOwner() public {
+        IStrategy[] memory strategiesToWhitelist = new IStrategy[](1);
+        bool[] memory thirdPartyTransfersForbiddenValues = new bool[](1);
+
+        cheats.expectRevert("Ownable: caller is not the owner");
+        cheats.prank(notOwner);
+        strategyFactory.whitelistStrategies(strategiesToWhitelist, thirdPartyTransfersForbiddenValues);
+    }
+
+    function test_editTokenStrategiesMapping() public {
+        IERC20[] memory tokens = new IERC20[](1);        
+        IStrategy[] memory strategies = new IStrategy[](1);
+        tokens[0] = IERC20(address(5));
+        strategies[0] = IStrategy(address(6));
+
+        cheats.expectEmit(true, true, true, true, address(strategyFactory));
+        emit StrategySetForToken(tokens[0], strategies[0]);
+        strategyFactory.editTokenStrategiesMapping(tokens, strategies);
+
+        require(strategyFactory.tokenStrategy(tokens[0]) == strategies[0], "mapping edited incorrectly");
+    }
+
+    function test_editTokenStrategiesMapping_revert_lengthMismatch() public {
+        IERC20[] memory tokens = new IERC20[](1);        
+        IStrategy[] memory strategies = new IStrategy[](2);
+
+        cheats.expectRevert("StrategyFactory.editTokenStrategiesMapping: input length mismatch");
+        strategyFactory.editTokenStrategiesMapping(tokens, strategies);
+    }
+
+    function test_editTokenStrategiesMapping_revert_notOwner() public {
+        IERC20[] memory tokens = new IERC20[](1);        
+        IStrategy[] memory strategies = new IStrategy[](1);
+
+        cheats.expectRevert("Ownable: caller is not the owner");
+        cheats.prank(notOwner);
+        strategyFactory.editTokenStrategiesMapping(tokens, strategies);
+    }
+
+    function setStrategyBeacon() public {
+        UpgradeableBeacon newBeacon = new UpgradeableBeacon(address(strategyImplementation));
+
+        cheats.expectEmit(true, true, true, true, address(strategyFactory));
+        emit StrategyBeaconModified(strategyFactory.strategyBeacon(), newBeacon);
+        strategyFactory.setStrategyBeacon(newBeacon);
+        require(strategyFactory.strategyBeacon() == IBeacon(newBeacon), "beacon not set correctly");
+    }
+
+    function setStrategyBeacon_revert_notOwner() public {
+        UpgradeableBeacon newBeacon = new UpgradeableBeacon(address(strategyImplementation));
+
+        cheats.expectRevert("Ownable: caller is not the owner");
+        cheats.prank(notOwner);
+        strategyFactory.setStrategyBeacon(newBeacon);
     }
 }
