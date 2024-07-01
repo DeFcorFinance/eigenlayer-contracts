@@ -2,6 +2,7 @@
 pragma solidity ^0.8.12;
 
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
+import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 import "src/contracts/strategies/StrategyFactory.sol";
 import "src/test/utils/EigenLayerUnitTestSetup.sol";
@@ -20,12 +21,12 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
 
     // Contract dependencies
     StrategyBase public strategyImplementation;
-    // eigenLayerProxyAdmin gets deployed in EigenLayerUnitTestSetup
-    // ProxyAdmin eigenLayerProxyAdmin;
+    UpgradeableBeacon public strategyBeacon;
     ERC20PresetFixedSupply public underlyingToken;
 
     uint256 initialSupply = 1e36;
     address initialOwner = address(this);
+    address beaconProxyOwner = address(this);
 
     uint256 initialPausedStatus = 0;
 
@@ -40,6 +41,9 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
 
         strategyImplementation = new StrategyBase(strategyManagerMock);
 
+        strategyBeacon = new UpgradeableBeacon(address(strategyImplementation));
+        strategyBeacon.transferOwnership(beaconProxyOwner);
+
         strategyFactoryImplementation = new StrategyFactory(strategyManagerMock);
 
         strategyFactory = StrategyFactory(
@@ -51,8 +55,7 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
                         initialOwner,
                         pauserRegistry,
                         initialPausedStatus,
-                        strategyImplementation,
-                        eigenLayerProxyAdmin
+                        strategyBeacon
                     )
                 )
             )
@@ -66,14 +69,14 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
             "constructor / initializer incorrect, strategyManager set wrong"
         );
         assertEq(
-            address(strategyFactory.strategyImplementation()),
+            address(strategyFactory.strategyBeacon().implementation()),
             address(strategyImplementation),
             "constructor / initializer incorrect, strategyImplementation set wrong"
         );
         assertEq(
-            address(strategyFactory.eigenLayerProxyAdmin()),
-            address(eigenLayerProxyAdmin),
-            "constructor / initializer incorrect, eigenLayerProxyAdmin set wrong"
+            address(strategyFactory.strategyBeacon()),
+            address(strategyBeacon),
+            "constructor / initializer incorrect, strategyBeacon set wrong"
         );
         assertEq(
             address(strategyFactory.pauserRegistry()),
@@ -82,17 +85,17 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
         );
         assertEq(strategyFactory.owner(), initialOwner, "constructor / initializer incorrect, owner set wrong");
         assertEq(strategyFactory.paused(), initialPausedStatus, "constructor / initializer incorrect, paused status set wrong");
+        assertEq(strategyBeacon.owner(), beaconProxyOwner, "constructor / initializer incorrect, beaconProxyOwner set wrong");
     }
 
     function test_initialize_revert_reinitialization() public {
         cheats.expectRevert("Initializable: contract is already initialized");
-        strategyFactory.initialize(
-            initialOwner,
-            pauserRegistry,
-            initialPausedStatus,
-            strategyImplementation,
-            eigenLayerProxyAdmin
-        );
+        strategyFactory.initialize({
+            _initialOwner: initialOwner,
+            _pauserRegistry: pauserRegistry,
+            _initialPausedStatus: initialPausedStatus,
+            _strategyBeacon: strategyBeacon
+        });
     }
 
     function test_deployNewStrategy() public {
@@ -100,9 +103,7 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
 
         require(strategyFactory.tokenStrategies(underlyingToken) == newStrategy, "tokenStrategies mapping not set correctly");
         require(newStrategy.strategyManager() == strategyManagerMock, "strategyManager not set correctly");
-        require(eigenLayerProxyAdmin.getProxyImplementation(TransparentUpgradeableProxy(payable(address(newStrategy))))
-            == address(strategyImplementation),
-            "strategyImplementation not set correctly");
+        require(strategyBeacon.implementation() == address(strategyImplementation), "strategyImplementation not set correctly");
         require(newStrategy.pauserRegistry() == pauserRegistry, "pauserRegistry not set correctly");
         require(newStrategy.underlyingToken() == underlyingToken, "underlyingToken not set correctly");
         require(strategyManagerMock.strategyIsWhitelistedForDeposit(newStrategy), "underlyingToken is not whitelisted");

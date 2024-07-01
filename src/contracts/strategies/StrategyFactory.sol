@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.12;
 
-import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin-upgrades/contracts/access/OwnableUpgradeable.sol";
 import "./StrategyBase.sol";
 import "../permissions/Pausable.sol";
 
 /**
- * @title Factory contract for deploying StrategyBase contracts for arbitrary ERC20 tokens
+ * @title Factory contract for deploying BeaconProxies of a Strategy contract implementation for arbitrary ERC20 tokens
  *        and automatically adding them to the StrategyWhitelist in EigenLayer.
  * @author Layr Labs, Inc.
  * @dev This may not be compatible with non-standard ERC20 tokens. Caution is warranted.
@@ -20,15 +19,12 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
     /// @notice EigenLayer's StrategyManager contract
     IStrategyManager public immutable strategyManager;
 
-    StrategyBase public strategyImplementation;
-
-    ProxyAdmin public eigenLayerProxyAdmin;
+    IBeacon public strategyBeacon;
 
     // @notice Mapping token => strategy contract for the token
     mapping(IERC20 => IStrategy) public tokenStrategies;
 
-    event StrategyImplementationModified(StrategyBase previousImplementation, StrategyBase newImplementation);
-    event ProxyAdminModified(ProxyAdmin previousProxyAdmin, ProxyAdmin newProxyAdmin);
+    event StrategyBeaconModified(IBeacon previousImplementation, IBeacon newImplementation);
     event StrategySetForToken(IERC20 token, IStrategy strategy);
 
     /// @notice Since this contract is designed to be initializable, the constructor simply sets the immutable variables.
@@ -41,19 +37,17 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         address _initialOwner,
         IPauserRegistry _pauserRegistry,
         uint256 _initialPausedStatus,
-        StrategyBase _strategyImplementation,
-        ProxyAdmin _eigenLayerProxyAdmin
+        IBeacon _strategyBeacon
     )
         public virtual initializer
     {
         _transferOwnership(_initialOwner);
         _initializePauser(_pauserRegistry, _initialPausedStatus);
-        _setStrategyImplementation(_strategyImplementation);
-        _setProxyAdmin(_eigenLayerProxyAdmin);
+        _setStrategyBeacon(_strategyBeacon);
     }
 
     /**
-     * @notice Deploy a new StrategyBase contract for the ERC20 token.
+     * @notice Deploy a new strategyBeacon contract for the ERC20 token.
      * @dev A strategy contract must not yet exist for the token.
      * $dev Immense caution is warranted for non-standard ERC20 tokens, particularly "reentrant" tokens
      * like those that conform to ERC777.
@@ -61,15 +55,12 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
     function deployNewStrategy(IERC20 token) external onlyWhenNotPaused(PAUSED_NEW_STRATEGIES) returns (IStrategy newStrategy) {
         require(tokenStrategies[token] == IStrategy(address(0)),
             "StrategyFactory.deployNewStrategy: Strategy already exists for token");
-        IStrategy strategy = IStrategy(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(strategyImplementation),
-                    address(eigenLayerProxyAdmin),
-                    abi.encodeWithSelector(StrategyBase.initialize.selector, token, pauserRegistry)
-                )
+        IStrategy strategy = IStrategy(address(
+            new BeaconProxy(
+                address(strategyBeacon),
+                abi.encodeWithSelector(StrategyBase.initialize.selector, token, pauserRegistry)
             )
-        );
+        ));
         _setStrategyForToken(token, strategy);
         IStrategy[] memory strategiesToWhitelist = new IStrategy[](1);
         bool[] memory thirdPartyTransfersForbiddenValues = new bool[](1);
@@ -106,14 +97,9 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         }
     }
 
-    // @notice Owner-only function to modify the `eigenLayerProxyAdmin`
-    function setProxyAdmin(ProxyAdmin _eigenLayerProxyAdmin) external onlyOwner {
-        _setProxyAdmin(_eigenLayerProxyAdmin);
-    }
-
-    // @notice Owner-only function to modify the `strategyImplementation`
-    function setStrategyImplementation(StrategyBase _strategyImplementation) external onlyOwner {
-        _setStrategyImplementation(_strategyImplementation);
+    // @notice Owner-only function to modify the `strategyBeacon`
+    function setStrategyBeacon(IBeacon _strategyBeacon) external onlyOwner {
+        _setStrategyBeacon(_strategyBeacon);
     }
 
     function _setStrategyForToken(IERC20 token, IStrategy strategy) internal {
@@ -121,14 +107,9 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         emit StrategySetForToken(token, strategy);
     }
 
-    function _setProxyAdmin(ProxyAdmin _eigenLayerProxyAdmin) internal {
-        emit ProxyAdminModified(eigenLayerProxyAdmin, _eigenLayerProxyAdmin);
-        eigenLayerProxyAdmin = _eigenLayerProxyAdmin;
-    }
-
-    function _setStrategyImplementation(StrategyBase _strategyImplementation) internal {
-        emit StrategyImplementationModified(strategyImplementation, _strategyImplementation);
-        strategyImplementation = _strategyImplementation;
+    function _setStrategyBeacon(IBeacon _strategyBeacon) internal {
+        emit StrategyBeaconModified(strategyBeacon, _strategyBeacon);
+        strategyBeacon = _strategyBeacon;
     }
 
     /**
