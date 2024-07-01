@@ -21,9 +21,6 @@ contract StrategyFactory is StrategyFactoryStorage, OwnableUpgradeable, Pausable
     /// @notice EigenLayer's StrategyManager contract
     IStrategyManager public immutable strategyManager;
 
-    event StrategyBeaconModified(IBeacon previousImplementation, IBeacon newImplementation);
-    event StrategySetForToken(IERC20 token, IStrategy strategy);
-
     /// @notice Since this contract is designed to be initializable, the constructor simply sets the immutable variables.
     constructor(IStrategyManager _strategyManager) {
         strategyManager = _strategyManager;

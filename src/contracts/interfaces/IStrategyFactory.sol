@@ -45,4 +45,9 @@ interface IStrategyFactory {
     // @notice Owner-only function to modify the `strategyBeacon`
     function setStrategyBeacon(IBeacon _strategyBeacon) external;
 
+    // @notice Emitted when the `strategyBeacon` is changed
+    event StrategyBeaconModified(IBeacon previousImplementation, IBeacon newImplementation);
+
+    // @notice Emitted whenever a slot is set in the `tokenStrategy` mapping
+    event StrategySetForToken(IERC20 token, IStrategy strategy);
 }
