@@ -3,6 +3,7 @@ pragma solidity ^0.8.12;
 
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin-upgrades/contracts/access/OwnableUpgradeable.sol";
+import "./StrategyFactoryStorage.sol";
 import "./StrategyBase.sol";
 import "../permissions/Pausable.sol";
 
@@ -10,19 +11,15 @@ import "../permissions/Pausable.sol";
  * @title Factory contract for deploying BeaconProxies of a Strategy contract implementation for arbitrary ERC20 tokens
  *        and automatically adding them to the StrategyWhitelist in EigenLayer.
  * @author Layr Labs, Inc.
+ * @notice Terms of Service: https://docs.eigenlayer.xyz/overview/terms-of-service
  * @dev This may not be compatible with non-standard ERC20 tokens. Caution is warranted.
  */
-contract StrategyFactory is OwnableUpgradeable, Pausable {
+contract StrategyFactory is StrategyFactoryStorage, OwnableUpgradeable, Pausable {
 
     uint8 internal constant PAUSED_NEW_STRATEGIES = 0;
 
     /// @notice EigenLayer's StrategyManager contract
     IStrategyManager public immutable strategyManager;
-
-    IBeacon public strategyBeacon;
-
-    // @notice Mapping token => strategy contract for the token
-    mapping(IERC20 => IStrategy) public tokenStrategies;
 
     event StrategyBeaconModified(IBeacon previousImplementation, IBeacon newImplementation);
     event StrategySetForToken(IERC20 token, IStrategy strategy);
@@ -53,7 +50,7 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
      * like those that conform to ERC777.
      */
     function deployNewStrategy(IERC20 token) external onlyWhenNotPaused(PAUSED_NEW_STRATEGIES) returns (IStrategy newStrategy) {
-        require(tokenStrategies[token] == IStrategy(address(0)),
+        require(tokenStrategy[token] == IStrategy(address(0)),
             "StrategyFactory.deployNewStrategy: Strategy already exists for token");
         IStrategy strategy = IStrategy(address(
             new BeaconProxy(
@@ -72,7 +69,7 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
 
     /** 
      * @notice Owner-only function to pass through a call to `StrategyManager.addStrategiesToDepositWhitelist`
-     * @dev Also adds the `strategiesToWhitelist` to the `tokenStrategies` mapping
+     * @dev Also adds the `strategiesToWhitelist` to the `tokenStrategy` mapping
      */
     function whitelistStrategies(
         IStrategy[] calldata strategiesToWhitelist,
@@ -85,7 +82,7 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         }
     }
 
-    // @notice Owner-only function to add (existing) Strategy contracts to the `tokenStrategies` mapping
+    // @notice Owner-only function to add (existing) Strategy contracts to the `tokenStrategy` mapping
     function editTokenStrategiesMapping(
         IERC20[] calldata tokens,
         IStrategy[] calldata strategies
@@ -103,7 +100,7 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
     }
 
     function _setStrategyForToken(IERC20 token, IStrategy strategy) internal {
-        tokenStrategies[token] = strategy;
+        tokenStrategy[token] = strategy;
         emit StrategySetForToken(token, strategy);
     }
 
@@ -111,11 +108,4 @@ contract StrategyFactory is OwnableUpgradeable, Pausable {
         emit StrategyBeaconModified(strategyBeacon, _strategyBeacon);
         strategyBeacon = _strategyBeacon;
     }
-
-    /**
-     * @dev This empty reserved space is put in place to allow future versions to add new
-     * variables without shifting down storage in the inheritance chain.
-     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
-     */
-    uint256[47] private __gap;
 }

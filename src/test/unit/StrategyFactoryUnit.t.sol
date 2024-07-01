@@ -101,7 +101,7 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
     function test_deployNewStrategy() public {
         StrategyBase newStrategy = StrategyBase(address(strategyFactory.deployNewStrategy(underlyingToken)));
 
-        require(strategyFactory.tokenStrategies(underlyingToken) == newStrategy, "tokenStrategies mapping not set correctly");
+        require(strategyFactory.tokenStrategy(underlyingToken) == newStrategy, "tokenStrategy mapping not set correctly");
         require(newStrategy.strategyManager() == strategyManagerMock, "strategyManager not set correctly");
         require(strategyBeacon.implementation() == address(strategyImplementation), "strategyImplementation not set correctly");
         require(newStrategy.pauserRegistry() == pauserRegistry, "pauserRegistry not set correctly");
@@ -134,7 +134,7 @@ contract StrategyFactoryUnitTests is EigenLayerUnitTestSetup {
         thirdPartyTransfersForbiddenValues[0] = true;
         strategyFactory.whitelistStrategies(strategiesToWhitelist, thirdPartyTransfersForbiddenValues);
 
-        require(strategyFactory.tokenStrategies(underlyingToken) == strategy, "tokenStrategies mapping not set correctly");
+        require(strategyFactory.tokenStrategy(underlyingToken) == strategy, "tokenStrategy mapping not set correctly");
         require(strategyManagerMock.thirdPartyTransfersForbidden(strategy), "3rd party transfers forbidden not set correctly");
     }
 }
